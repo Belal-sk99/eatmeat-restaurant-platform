@@ -1,257 +1,202 @@
-# EatMeat 🍽️ — Restaurant Platform (Next.js + Prisma + Supabase)
+# EatMeat — Restaurant Platform (Next.js + Prisma + Postgres)
 
-EatMeat is a full-stack **single-restaurant** platform (Palestine) built with **Next.js App Router + TypeScript**.  
-It covers authentication (credentials + Google/Facebook), reservations with inventory holds + admin approval, instant & scheduled orders, in-app payments (Stripe) + external payment proof, refunds, blocks/closures, and an admin panel.
+EatMeat is a **single-restaurant** web platform (Dubai, UAE) with a public site, customer flows, and an admin panel.
+It covers **authentication**, **table bookings**, **pickup orders (instant/scheduled)**, **payments (Stripe + external proof)**, **refunds**, **closures/blocks**, and **email notifications**.
 
-> **Timezone rule:** All times are stored in **UTC** and displayed in **Asia/Hebron**.
-
----
-
-## Live
-
-- Health endpoint: https://eatmeat.vercel.app/api/health
+> **Time rule:** all timestamps are stored in **UTC** and displayed in the restaurant’s time zone (default: **Asia/Dubai**).
 
 ---
 
-## Tech Stack
+## What you can do
+
+### Guests / Customers
+
+- Browse public pages (landing, menu, dish details).
+- Create bookings by selecting **table types**, **start time**, **stay type** (SHORT/LONG), and optional **pre-order items**.
+- Create **pickup orders** (instant or scheduled) using **Cart → Checkout**.
+- Pay with **Stripe** (in-app) or choose **external payment** and upload proof.
+- Cancel bookings/orders and receive refunds per policy.
+- Receive email notifications for verification and lifecycle events (approvals, expiries, cancellations, reminders).
+
+### Admins
+
+- Manage **table types** (inventory, seat ranges, pricing, active).
+- Manage **menu items** + categories (CRUD, availability).
+- Approve/reject **bookings** and **external-payment orders**.
+- Create **blocks/closures** (bookings/orders/both) with user-facing messages.
+- Reconcile external payment proof and trigger/track refunds.
+- Audit critical admin actions.
+
+---
+
+## Core business rules (SRS)
+
+### Bookings (Reservations)
+
+- **15-minute slots** (start times aligned).
+- **2-hour minimum lead time** (rounded up to the next 15-min slot).
+- **7-day horizon** (bookings allowed up to 7 days in advance).
+- Stay types:
+  - `SHORT` up to **2h**
+  - `LONG` up to **5h** (total price **×2** including preorders)
+- Inventory overlap uses **half-open intervals**: `[startAt, endAt)`.
+- New booking is created as `PENDING_APPROVAL` and **holds inventory immediately**.
+- Admin must approve/reject; if still pending after **60 minutes** it expires.
+
+### Orders (Pickup-only MVP)
+
+- `INSTANT` or `SCHEDULED`.
+- Scheduled orders follow the same time rules (**2h lead**, **7-day window**, **15-min alignment**).
+- External-payment orders require admin confirmation within **60 minutes** or expire.
+- Status pipeline includes `PENDING_APPROVAL → ACCEPTED → (DUE) → READY → COMPLETED`.
+
+### Payments
+
+- **Stripe**: PaymentIntent / Checkout Session with webhook-driven confirmation.
+- **External**: proof upload at `/payments/proof/[refType]/[refId]`, reviewed by admin.
+
+### Refund policy
+
+Refunds depend on time remaining before `scheduledAt` (booking start / scheduled order time) and total amount:
+
+| Time before scheduledAt | Total ≤ $200 | Total > $200 |
+| ----------------------- | -----------: | -----------: |
+| > 24h                   |         100% |         100% |
+| 12–24h                  |          90% |          75% |
+| < 12h                   |          50% |          50% |
+
+Notes:
+
+- Applies to **bookings**, **scheduled orders**, and **booking preorders**.
+- **Instant orders** default to **50%** refund (admin override supported).
+- Stripe refunds are automatic; external refunds are manual but tracked.
+
+### Blocks / closures
+
+Admins can block intervals for **BOOKINGS**, **ORDERS**, or **BOTH** (with a message shown to users). Any attempt to book/order inside a block must fail with that message.
+
+---
+
+## Tech stack
 
 - **Next.js** (App Router) + **TypeScript**
 - **Prisma ORM**
 - **PostgreSQL**
-  - Local dev DB via **Docker**
-  - Production DB: **Supabase Postgres**
-- **Auth**: NextAuth (Credentials + Google + Facebook), **DB sessions**
-- **Payments**: Stripe (in-app) + external payment proof (admin-reconciled)
-- **Deploy**: Vercel (Preview + Production environments)
+  - Local dev DB via Docker
+  - Production runtime DB: **Supabase Postgres**
+- **Auth**: NextAuth (Credentials + Google/Facebook), DB sessions
+- **Payments**: Stripe + external payment proof
+- **UI**: Tailwind + shadcn/ui, Design System (**dark modern clean + red accent**)
+- **Deploy**: Vercel (Preview + Production)
 
 ---
 
-## Features (SRS-aligned)
+## Repository structure (high level)
 
-### Authentication
-
-- Credentials sign-up + **email verification required** before login
-- Credentials login/logout (avoid user enumeration)
-- OAuth: Google + Facebook
-- Account linking by email (avoid duplicate users)
-- Roles: `USER` / `ADMIN` (admin created via seeding/tooling)
-- Protected `/admin/*` routes (RBAC)
-
-### Reservations (Bookings)
-
-- Table types with inventory (Small/Medium/Large or admin-defined)
-- 15-minute slots, 2-hour minimum lead time, 7-day horizon
-- Stay types:
-  - `SHORT` (≤2h)
-  - `LONG` (≤5h, **price x2**)
-- Inventory hold immediately on creation in `PENDING_APPROVAL`
-- Admin approve/reject
-- Auto-expire after 60 minutes if not confirmed
-
-### Orders
-
-- Instant + Scheduled (pickup-only MVP)
-- Scheduled orders follow the same time rules (2h lead, 7 days, 15-min slots)
-- Status pipeline:
-  - Instant: `ACCEPTED → READY → COMPLETED`
-  - Scheduled: `ACCEPTED → DUE → READY → COMPLETED`
-- External payments require admin confirmation (60-min SLA), else expire
-
-### Payments & Refunds
-
-- Stripe checkout/payment intents + webhook confirmation (later milestone)
-- External payment proof upload + admin reconciliation
-- Refund policy (bookings + scheduled orders + booking preorders):
-  - > 24h: 100%
-  - 12–24h: 90% (≤$200) / 75% (>$200)
-  - <12h: 50%
-  - Instant orders: 50% (unless admin overrides)
-
-### Blocks / Closures
-
-- Admin can block intervals for bookings/orders/both with a message shown to users
+```
+app/        # Next.js routes (public/auth/user/admin) + API routes
+lib/        # shared server/client utilities (time, validation, db helpers…)
+prisma/     # schema + migrations
+docs/       # SRS, DB schema notes, design system, backlog
+public/     # static assets
+scripts/    # local tooling (seeding, helpers, etc.)
+```
 
 ---
 
-## Project Status / Roadmap
-
-Milestones:
-
-- **M0** Foundations ✅
-- **M1** Auth
-- **M2** Admin Setup
-- **M3** Reservations
-- **M4** Orders
-- **M5** Payments
-- **M6** Notifications & Polish
-
-Completed foundation stories:
-
-- **FND-1** Repo conventions + lint/format + env structure ✅
-- **FND-2** Prisma + local DB + baseline migrations ✅
-- **FND-3** Vercel Preview/Prod + health endpoint ✅
-
----
-
-## Getting Started (Local Development)
+## Getting started (local)
 
 ### Prerequisites
 
-- Node.js **18+**
+- Node.js 18+
 - Docker Desktop (for local Postgres)
 
 ### 1) Install
 
 ```bash
-git clone <YOUR_REPO_URL>
-cd eatmeat
+git clone https://github.com/Belal-sk99/eatmeat-restaurant-platform.git
+cd eatmeat-restaurant-platform
 npm install
 ```
 
 ### 2) Environment variables
 
-Create .env.local (never commit):
+Create `.env.local` (do not commit). Minimal setup:
 
-### Local dev DB (Docker)
+```bash
+# Database
+DATABASE_URL="postgresql://USER:PASSWORD@HOST:PORT/DB?schema=public"
+DIRECT_URL="postgresql://USER:PASSWORD@HOST:PORT/DB?schema=public"
 
-DATABASE_URL="postgresql://postgres:postgres@localhost:54322/eatmeat?schema=public"
-DIRECT_URL="postgresql://postgres:postgres@localhost:54322/eatmeat?schema=public"
+# NextAuth
+NEXTAUTH_URL="http://localhost:3000"
+NEXTAUTH_SECRET="..."
 
-### Auth (placeholders for now; real values come with Auth milestone)
-
-NEXTAUTH_SECRET=""
+# OAuth (optional until M1)
 GOOGLE_CLIENT_ID=""
 GOOGLE_CLIENT_SECRET=""
 FACEBOOK_CLIENT_ID=""
 FACEBOOK_CLIENT_SECRET=""
 
-### Payments (placeholders for now)
-
+# Stripe (optional until M5)
 STRIPE_SECRET_KEY=""
 STRIPE_WEBHOOK_SECRET=""
 NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY=""
 
-- Keep .env.example committed with empty placeholders only.
-
----
+# Email (Notifications) — provider recommended in backlog: Resend
+RESEND_API_KEY=""
+EMAIL_FROM="no-reply@yourdomain.com"
+```
 
 ### 3) Start local Postgres
 
-## `docker compose up -d`
-
----
-
-### 4) Prisma: migrate + generate
-
 ```bash
-npx prisma migrate dev --name init_auth
-npx prisma generate
+docker compose up -d
 ```
 
----
+### 4) Prisma: generate + migrate
+
+```bash
+npx prisma generate
+npx prisma migrate dev
+```
 
 ### 5) Run the app
 
-### ` npm run dev`
-
----
+```bash
+npm run dev
+```
 
 ### 6) Prisma Studio
 
-### `npx prisma studio`
-
----
-
-## Scripts
-
-### Common scripts (see package.json):
-
 ```bash
-npm run prisma:generate
-
-npm run prisma:migrate
-
-npm run prisma:studio
-```
-
-### Optional DB helpers (if added):
-
-```bash
-npm run db:up
-
-npm run db:down
-```
-
-## Database & Prisma Workflow (Important)
-
-- Dev migrations are created locally via prisma migrate dev.
-
-- Commit: `prisma/migrations/**`
-
-- Never commit: `.env.local`
-
-### Production (Supabase + Vercel) strategy
-
-- App runtime on Vercel should use Supabase pooler/transaction connection for stability under serverless traffic.
-
-- Prisma migrations and admin tooling should use a direct connection string.
-
-- Vercel environment variables must be separated for Preview and Production.
-
-## Vercel Preview Deployments
-
-- PRs generate Preview deployments automatically.
-
-- `GET /api/health` returns:
-  - `env`: `preview` or `production`
-
-  - git branch + commit SHA
-
-## Project Structure (High level)
-
-```bash
-app/
-  api/
-    health/route.ts
-  (public)/
-  (auth)/
-  (user)/
-  (admin)/
-prisma/
-  schema.prisma
-  migrations/
-docs/
-.github/
-  ISSUE_TEMPLATE/story.md
+npx prisma studio
 ```
 
 ---
 
-## Troubleshooting
+## Deployment notes (Vercel + Supabase)
 
-### Docker is running but Postgres doesn’t start
+- Keep **Preview** and **Production** environment variables separate.
+- Use the Supabase **pooled** connection string for serverless runtime; use **DIRECT_URL** for migrations/admin tooling.
+- Webhooks (Stripe) must be configured per environment and handled idempotently.
 
-`docker logs -f eatmeat-postgres`
+---
 
-### Prisma can’t connect to DB
+## Roadmap
 
-- Confirm container is up:
+Milestones are tracked in GitHub Issues:
 
-  `docker ps`
+- **M0** Foundations + App Shell ✅
+- **M1** Authentication + Notifications foundation
+- **M2** Admin setup (menu/table types/blocks/reconciliation)
+- **M3** Reservations
+- **M4** Orders
+- **M5** Payments (Stripe webhooks + refunds)
+- **M6** Notifications + polish
 
-- Confirm .env.local has the correct DATABASE_URL and port 54322.
-
-### Studio opens but tables are missing
-
-- You likely didn’t run migrations:
-
-  `npx prisma migrate dev`
+---
 
 ## License
 
-### TBD
-
-```bash
- If you paste your current `package.json` scripts + your actual folder structure under `app/`, I can adjust this README to match your repo **exactly** (no placeholders/assumptions).
-::contentReference[oaicite:0]{index=0}
-```
+TBD

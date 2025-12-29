@@ -26,10 +26,13 @@
   },
   "dependencies": {
     "@prisma/client": "^6.19.1",
+    "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0",
     "next": "16.1.0",
     "prisma": "^6.19.1",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "tsx": "^4.21.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

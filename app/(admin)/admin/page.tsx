@@ -1,9 +1,8 @@
-// app/(admin)/admin/page.tsx
 export default function AdminHomePage() {
   return (
     <div className="space-y-2">
-      <h2 className="text-xl font-semibold">Admin Dashboard</h2>
-      <p className="opacity-80">Placeholder — will be protected in AUTH-5.</p>
+      <h1 className="text-2xl font-semibold">Admin Dashboard</h1>
+      <p className="text-white/60">Placeholder (RBAC later).</p>
     </div>
   );
 }

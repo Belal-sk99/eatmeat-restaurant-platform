@@ -2,8 +2,8 @@
 export default function RegisterPage() {
   return (
     <div className="space-y-2">
-      <h1 className="text-xl font-semibold">Register</h1>
-      <p className="opacity-80">Placeholder — AUTH epic will implement this.</p>
+      <h1 className="text-xl font-semibold">Create account</h1>
+      <p className="text-sm text-white/60">Placeholder (Auth milestone).</p>
     </div>
   );
 }

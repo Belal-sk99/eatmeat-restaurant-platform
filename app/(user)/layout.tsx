@@ -1,5 +1,5 @@
-// app/(user)/layout.tsx
 import Navbar from "../_components/Navbar";
+import Container from "../_components/Container";
 
 export default function UserLayout({
   children,
@@ -7,10 +7,10 @@ export default function UserLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-dvh flex flex-col">
+    <div className="min-h-screen bg-black">
       <Navbar />
-      <main className="flex-1">
-        <div className="mx-auto max-w-5xl px-4 py-8">{children}</div>
+      <main className="py-10">
+        <Container>{children}</Container>
       </main>
     </div>
   );
